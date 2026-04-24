@@ -11,10 +11,7 @@ from graphicPipeline import GraphicPipeline
 from readply         import readply
 from mipmap          import build_mipmaps, mipmap_atlas
 
-# ============================================================
-#  main.py  —  Point d'entree du renderer 3D software.
-#
-#  Modes disponibles (variable MODE) :
+#  Modes disponibles :
 #    "single"   -> rendu avec un seul filtre (FILTER_MODE)
 #    "compare"  -> rendu avec tous les filtres + grille de comparaison
 #    "mipmap_vis" -> visualisation de la pyramide MIP
@@ -24,11 +21,10 @@ from mipmap          import build_mipmaps, mipmap_atlas
 #
 #  Filtres de downsampling (DOWNSAMPLE_FILTER) :
 #    "box", "gaussian", "lanczos"
-# ============================================================
+# 
 
-# ------------------------------------------------------------------
 # CONFIGURATION
-# ------------------------------------------------------------------
+# 
 MODE             = "compare"      # "single" | "compare" | "mipmap_vis"
 FILTER_MODE      = "trilinear"    # pour le mode "single"
 DOWNSAMPLE_FILTER = "box"         # "box" | "gaussian" | "lanczos"
@@ -38,9 +34,7 @@ OUTPUT_DIR       = "output"
 WIDTH  = 512
 HEIGHT = 288
 
-# ------------------------------------------------------------------
-# CHEMINS (relatifs au dossier renderer/)
-# ------------------------------------------------------------------
+
 _dir         = os.path.dirname(os.path.abspath(__file__))
 PLY_PATH     = os.path.join(_dir, "ply/suzanne.ply")
 TEXTURE_PATH = os.path.join(_dir, "texture/suzanne.png")

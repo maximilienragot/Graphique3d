@@ -1,33 +1,5 @@
 import numpy as np
 
-# ============================================================
-#  mipmap.py  —  Pyramide MIP + filtres de texture
-#
-#  Ce module implémente :
-#    1. build_mipmaps()      → pyramide MIP (box filter par défaut)
-#    2. Filtres de downsampling pour construire la pyramide :
-#         - box_filter       : moyenne uniforme des 4 voisins
-#         - gaussian_filter  : moyenne pondérée par gaussienne 4×4
-#         - lanczos_filter   : filtre sinc-window haute qualité
-#    3. Filtres de sampling (interpolation) :
-#         - sample_nearest   : nearest-neighbour (référence / baseline)
-#         - sample_bilinear  : interpolation bilinéaire 4 voisins
-#         - sample_trilinear : bilinéaire × 2 niveaux + lerp (standard)
-#         - sample_aniso     : anisotropique simplifié (multi-tap)
-#
-#  Principe du mipmapping :
-#    - On précalcule N versions de la texture, chaque niveau
-#      étant 2× plus petit que le précédent.
-#    - Lors du rendu, on choisit le niveau dont la résolution
-#      correspond à la surface couverte dans l'image.
-#    - Cela évite l'aliasing (scintillement) et améliore la qualité.
-#
-#  Calcul du LOD (méthode précise OpenGL) :
-#    rho = max( sqrt(dU/dx²+dV/dx²), sqrt(dU/dy²+dV/dy²) )
-#    L   = log2( rho × texture_size )
-# ============================================================
-
-
 # ──────────────────────────────────────────────────────────────
 #  FILTRES DE DOWNSAMPLING  (construction de la pyramide)
 # ──────────────────────────────────────────────────────────────
@@ -35,7 +7,6 @@ import numpy as np
 def _box_downsample(img):
     """
     Box filter : moyenne uniforme de blocs 2x2.
-    Filtre standard pour les mipmaps : rapide et correct.
     """
     H, W = img.shape[0], img.shape[1]
     H2, W2 = H - (H % 2), W - (W % 2)
@@ -49,10 +20,7 @@ def _box_downsample(img):
 
 def _gaussian_downsample(img):
     """
-    Filtre gaussien 4 taps (sigma ~0.85) + sous-echantillonnage x2.
-
-    Le filtre gaussien attenue mieux les hautes frequences que le
-    box filter, ce qui reduit l'aliasing residuel dans la pyramide.
+    Filtre gaussien (sigma ~0.85)
     Le noyau separe 1D est applique horizontalement puis verticalement.
     """
     kernel_1d = np.array([0.0625, 0.4375, 0.4375, 0.0625], dtype=np.float32)
@@ -96,11 +64,7 @@ def _lanczos_kernel_vals(x, a=2):
 
 def _lanczos_downsample(img, a=2):
     """
-    Filtre de Lanczos (ordre a=2) + sous-echantillonnage x2.
-
-    Chaque pixel de sortie est la somme ponderee par le noyau de
-    Lanczos de 2a x 2a pixels de l'image source. Produit des
-    mipmaps plus nets que le box filter, au prix d'un cout plus eleve.
+    Filtre de Lanczos (ordre a=2)
     """
     H, W    = img.shape[:2]
     Ho, Wo  = H // 2, W // 2
@@ -144,18 +108,6 @@ DOWNSAMPLE_METHODS = {
 def build_mipmaps(texture, downsample_filter="box"):
     """
     Construit la pyramide MIP complete a partir de la texture originale.
-
-    Parametres :
-      texture          : np.ndarray (H, W, 3) uint8  [0..255]
-      downsample_filter: "box" | "gaussian" | "lanczos"
-                         Filtre utilise pour calculer chaque niveau.
-
-    Retourne :
-      list de np.ndarray (Hi, Wi, 3) float32 [0.0..1.0]
-        mips[0] = texture originale normalisee
-        mips[1] = moitie de taille
-        ...
-        mips[N] = 1x1 pixel (couleur moyenne de toute la texture)
     """
     fn      = DOWNSAMPLE_METHODS.get(downsample_filter, _box_downsample)
     current = texture.astype(np.float32) / 255.0
@@ -176,9 +128,6 @@ def build_mipmaps(texture, downsample_filter="box"):
 def sample_nearest(mip_level, u, v):
     """
     Nearest-neighbour : texel le plus proche, sans interpolation.
-
-    Methode de reference (baseline). Produit un effet pixelise
-    de pres et du scintillement au loin. Tres rapide.
     """
     u = u % 1.0; v = v % 1.0
     H, W = mip_level.shape[:2]
@@ -190,9 +139,6 @@ def sample_nearest(mip_level, u, v):
 def sample_bilinear(mip_level, u, v):
     """
     Filtrage bilineaire : interpolation ponderee des 4 texels voisins.
-
-    Evite l'effet pixelise du nearest-neighbour mais peut etre flou
-    si le LOD n'est pas adapte. Bon compromis vitesse/qualite.
     """
     u = u % 1.0; v = v % 1.0
     H, W = mip_level.shape[:2]
@@ -214,16 +160,6 @@ def sample_trilinear(mips, u, v, lod):
     """
     Filtrage trilineaire : bilineaire sur deux niveaux MIP adjacents
     + interpolation lineaire entre les deux.
-
-    Evite les transitions brusques entre niveaux MIP (bandes visibles
-    avec un LOD entier seulement). C'est le standard OpenGL/Vulkan.
-
-    Parametres :
-      mips : pyramide MIP (build_mipmaps)
-      u, v : UV dans [0, 1]
-      lod  : level of detail flottant >= 0
-
-    Retourne : couleur (3,) float [0,1]
     """
     max_level = len(mips) - 1
     lod = max(0.0, min(lod, float(max_level)))
@@ -244,25 +180,6 @@ def sample_anisotropic(mips, u, v, lod, dudx, dvdx, dudy, dvdy,
                         max_samples=8):
     """
     Filtrage anisotropique simplifie (approximation EWA multi-tap).
-
-    Le filtrage trilineaire est isotropique : il applique le meme flou
-    dans toutes les directions. Sur une surface vue en oblique, la
-    texture est sur-filtree dans un axe (floue) ou aliasee dans l'autre.
-
-    L'approche anisotropique :
-      1. Calcule deux LODs directionnels (selon x et y ecran).
-      2. Prend le min comme niveau de base (preserve la nettete).
-      3. Accumule plusieurs samples le long de l'axe le plus etire.
-
-    Parametres :
-      mips             : pyramide MIP
-      u, v             : UV dans [0, 1]
-      lod              : LOD isotropique de reference
-      dudx,dvdx        : derivees partielles de UV selon x
-      dudy,dvdy        : derivees partielles de UV selon y
-      max_samples      : nombre max de taps (qualite / cout)
-
-    Retourne : couleur (3,) float [0,1]
     """
     max_level = len(mips) - 1
     tex_size  = max(mips[0].shape[0], mips[0].shape[1])
@@ -323,12 +240,6 @@ def compute_lod_accurate(dudx, dvdx, dudy, dvdy, tex_size):
 def mipmap_atlas(mips):
     """
     Assemble tous les niveaux MIP en une seule image horizontale.
-
-    Les niveaux sont disposes du plus grand (gauche) au plus petit
-    (droite), separes d'une marge de 2px noirs.
-    Utile pour le rapport et le poster.
-
-    Retourne : np.ndarray (H_max, W_total, 3) float32
     """
     H_max   = mips[0].shape[0]
     gap     = 2
