@@ -217,7 +217,7 @@ def sample_anisotropic(mips, u, v, lod, dudx, dvdx, dudy, dvdy,
 
 def compute_lod_accurate(dudx, dvdx, dudy, dvdy, tex_size):
     """
-    Calcul precis du LOD selon la formule OpenGL.
+    Calcul precis du LOD.
 
     rho = max( ||dUV/dx||, ||dUV/dy|| ) x tex_size
     LOD = log2(rho)
